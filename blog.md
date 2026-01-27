@@ -16,7 +16,7 @@ permalink: /blog/
   <ul class="post-list">
     {% for post in site.posts %}
     <li>
-      <span class="post-meta">{{ post.date | date: "%B %d, %Y" }}</span>
+      <span class="post-meta"><time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%B %d, %Y" }}</time></span>
       <h3>
         <a class="post-link" href="{{ post.url | relative_url }}">{{ post.title }}</a>
       </h3>
