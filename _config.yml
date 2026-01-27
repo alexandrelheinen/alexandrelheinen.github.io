@@ -1,0 +1,34 @@
+# Site settings
+title: Alexandre L'Heinen
+email: contact@example.com
+description: >-
+  Engineer specializing in innovation management, mathematics, and embedded systems 
+  for robotics. Exploring the intersection of theory and practical applications.
+baseurl: ""
+url: "https://alexandrelheinen.github.io"
+
+# Build settings
+markdown: kramdown
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# MathJax configuration
+mathjax: true
+
+# Social media links
+github_username: alexandrelheinen
+linkedin_username: alexandrelheinen
+twitter_username: alexandrelheinen
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
