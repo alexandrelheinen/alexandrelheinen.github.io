@@ -1,0 +1,15 @@
+<figure class="article-figure">
+    <img src="{{ include.src }}" alt="{{ include.alt }}" loading="lazy">
+    {% if include.caption or include.source %}
+    <figcaption>
+        {% if include.caption %}
+        <span class="figure-caption">
+            <strong>Figure {{ include.number | default: "" }}{% if include.number %}:{% endif %}</strong> {{ include.caption }}
+        </span>
+        {% endif %}
+        {% if include.source %}
+        <span class="figure-source">Source: {{ include.source }}</span>
+        {% endif %}
+    </figcaption>
+    {% endif %}
+</figure>

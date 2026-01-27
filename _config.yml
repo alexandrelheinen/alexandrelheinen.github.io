@@ -1,21 +1,45 @@
-# Copyright 2026 Alexandre Loeblein Heinen
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#     https://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (c) 2026 Alexandre Loeblein Heinen
+#
+# This project is licensed under the MIT License.
+# See the LICENSE file for details.
 
 title: "Alexandre Loeblein Heinen - Personal Website"
-theme: jekyll-theme-minimal
+description: "Engineer, Math & Innovation Enthusiast, Conversationalist"
+author: "Alexandre Loeblein Heinen"
+url: "https://alexandrelheinen.github.io"
+
+# Build settings
+theme: null
 plugins:
   - jekyll-feed
-# This enables MathJax for LaTeX
+  - jekyll-relative-links
+
+# Relative links configuration
+relative_links:
+  enabled: true
+  collections: false
+
+# Kramdown configuration
 kramdown:
   math_engine: mathjax
+  math_engine_opts:
+    preview: true
+    preview_as_code: false
+
+# Social links
+social:
+  - name: LinkedIn
+    url: https://www.linkedin.com/in/alexandrelheinen
+    icon: linkedin
+  - name: Malt
+    url: https://www.malt.fr/profile/alexandreloebleinheinen
+    icon: briefcase
+  - name: GitHub
+    url: https://github.com/alexandrelheinen
+    icon: github
+  - name: CV
+    url: /files/cv.pdf
+    icon: file-text
+  - name: Blog
+    url: /blog
+    icon: rss
