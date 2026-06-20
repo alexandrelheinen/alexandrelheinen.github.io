@@ -302,29 +302,17 @@
       return '<p>' + escapeHtml(markdown).replace(/\n/g, '<br>') + '</p>';
     }
 
-    function preprocessMarkdownDivs(markdown, className, store) {
-      store = store || [];
-      var pattern = new RegExp('<div\\s+([^>]*class="[^"]*\\b' + className + '\\b[^"]*"[^>]*)>([\\s\\S]*?)<\\/div>', 'gi');
-      var text = String(markdown || '').replace(pattern, function (match, openTag, inner) {
+    function preprocessMarkdownDivs(markdown) {
+      var text = String(markdown || '');
+      text = text.replace(/<div\s+([^>]*class="[^"]*\barticle-note\b[^"]*"[^>]*)>([\s\S]*?)<\/div>/gi, function (match, openTag, inner) {
         if (!hasMarkdownAttr(openTag)) return match;
-        var token = '@@CONTENT_RUNTIME_MD_DIV_' + store.length + '@@';
-        store.push({ className: className, inner: inner });
-        return token;
+        return '<div class="article-note">' + parseInlineMarkdown(inner) + '</div>';
       });
-      return { text: text, store: store };
-    }
-
-    function restoreMarkdownDivs(html, store) {
-      store.forEach(function (entry, index) {
-        var replacement;
-        if (entry.className === 'poem') {
-          replacement = renderPoemHtml(entry.inner);
-        } else {
-          replacement = '<div class="' + entry.className + '">' + parseInlineMarkdown(entry.inner) + '</div>';
-        }
-        html = html.split('@@CONTENT_RUNTIME_MD_DIV_' + index + '@@').join(replacement);
+      text = text.replace(/<div\s+([^>]*class="[^"]*\bpoem\b[^"]*"[^>]*)>([\s\S]*?)<\/div>/gi, function (match, openTag, inner) {
+        if (!hasMarkdownAttr(openTag)) return match;
+        return renderPoemHtml(inner);
       });
-      return html;
+      return text;
     }
 
     function renderPoemHtml(inner) {
@@ -342,10 +330,8 @@
     function renderMarkdown(markdown, options) {
       options = options || {};
       var prepared = preprocessLiquid(markdown, options.xciteIndex);
-      var mdDivStore = [];
-      var notes = preprocessMarkdownDivs(prepared, 'article-note', mdDivStore);
-      var poems = preprocessMarkdownDivs(notes.text, 'poem', mdDivStore);
-      var math = protectMath(poems.text);
+      prepared = preprocessMarkdownDivs(prepared);
+      var math = protectMath(prepared);
       var html;
       if (window.marked && typeof window.marked.parse === 'function') {
         html = window.marked.parse(math.text, { gfm: true, breaks: false });
@@ -357,7 +343,6 @@
           .map(function (block) { return '<p>' + escapeHtml(block).replace(/\n/g, '<br>') + '</p>'; })
           .join('');
       }
-      html = restoreMarkdownDivs(html, mdDivStore);
       return restoreMath(html, math.store);
     }
 
