@@ -302,8 +302,8 @@
       return '<p>' + escapeHtml(markdown).replace(/\n/g, '<br>') + '</p>';
     }
 
-    function preprocessMarkdownDivs(markdown, className) {
-      var store = [];
+    function preprocessMarkdownDivs(markdown, className, store) {
+      store = store || [];
       var pattern = new RegExp('<div\\s+([^>]*class="[^"]*\\b' + className + '\\b[^"]*"[^>]*)>([\\s\\S]*?)<\\/div>', 'gi');
       var text = String(markdown || '').replace(pattern, function (match, openTag, inner) {
         if (!hasMarkdownAttr(openTag)) return match;
@@ -316,17 +316,36 @@
 
     function restoreMarkdownDivs(html, store) {
       store.forEach(function (entry, index) {
-        var replacement = '<div class="' + entry.className + '">' + parseInlineMarkdown(entry.inner) + '</div>';
+        var replacement;
+        if (entry.className === 'poem') {
+          replacement = renderPoemHtml(entry.inner);
+        } else {
+          replacement = '<div class="' + entry.className + '">' + parseInlineMarkdown(entry.inner) + '</div>';
+        }
         html = html.split('@@CONTENT_RUNTIME_MD_DIV_' + index + '@@').join(replacement);
       });
       return html;
     }
 
+    function renderPoemHtml(inner) {
+      var stanzas = String(inner || '').replace(/^\s+|\s+$/g, '').split(/\n\s*\n/);
+      var parts = ['<div class="poem">'];
+      stanzas.forEach(function (stanza) {
+        stanza.split('\n').forEach(function (line) {
+          parts.push('<p>' + escapeHtml(line) + '</p>');
+        });
+      });
+      parts.push('</div>');
+      return parts.join('');
+    }
+
     function renderMarkdown(markdown, options) {
       options = options || {};
       var prepared = preprocessLiquid(markdown, options.xciteIndex);
-      var notes = preprocessMarkdownDivs(prepared, 'article-note');
-      var math = protectMath(notes.text);
+      var mdDivStore = [];
+      var notes = preprocessMarkdownDivs(prepared, 'article-note', mdDivStore);
+      var poems = preprocessMarkdownDivs(notes.text, 'poem', mdDivStore);
+      var math = protectMath(poems.text);
       var html;
       if (window.marked && typeof window.marked.parse === 'function') {
         html = window.marked.parse(math.text, { gfm: true, breaks: false });
@@ -338,7 +357,7 @@
           .map(function (block) { return '<p>' + escapeHtml(block).replace(/\n/g, '<br>') + '</p>'; })
           .join('');
       }
-      html = restoreMarkdownDivs(html, notes.store);
+      html = restoreMarkdownDivs(html, mdDivStore);
       return restoreMath(html, math.store);
     }
 
