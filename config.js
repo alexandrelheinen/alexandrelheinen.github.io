@@ -1,3 +1,3 @@
 window.SITE_CONFIG = {
-  url: "https://alexandrelheinen.netlify.app",
+  url: "https://alexandrelheinen.pages.dev",
 };
