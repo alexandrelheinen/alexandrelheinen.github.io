@@ -181,7 +181,7 @@
       ].join('');
     }
 
-    function preprocessLiquid(markdown) {
+    function preprocessLiquid(markdown, xciteIndex) {
       return stripFrontMatter(markdown)
         .replace(/\{%-?\s*include\s+figure\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
           return figureHtml(parseIncludeAttrs(raw));
@@ -196,11 +196,63 @@
           return videoHtml(parseIncludeAttrs(raw));
         })
         .replace(/\{%-?\s*include\s+xcite\.html\s+key=["']([^"']+)["'][\s\S]*?-?%\}/g, function (_, key) {
-          return '<span class="text-secondary">' + escapeHtml(key) + '</span>';
+          return xciteIndex ? xciteHtml(key, xciteIndex) : '%%CONTENT_RUNTIME_XCITE_' + key + '%%';
         })
         .replace(/\{%-?\s*cite\s+([^%\s]+)[\s\S]*?-?%\}/g, function (_, key) {
           return '<sup class="text-secondary">' + escapeHtml(key) + '</sup>';
         });
+    }
+
+    var xciteIndex = null;
+    var xciteIndexPromise = null;
+
+    function xciteUrl(item) {
+      var slug = item.slug || '';
+      if (item.type === 'article') return '/pages/articles/?article=' + encodeURIComponent(slug);
+      if (item.type === 'post') return '/pages/blog/?post=' + encodeURIComponent(slug);
+      if (item.type === 'resource') return '/pages/resources/?resource=' + encodeURIComponent(slug);
+      return '#';
+    }
+
+    function xciteLabel(item) {
+      var fm = item.front_matter || {};
+      return fm.title || fm.name || item.slug || '';
+    }
+
+    function xciteHtml(key, index) {
+      var item = index[key];
+      if (!item) return '<span class="xcite-missing">' + escapeHtml(key) + '</span>';
+      return '<a href="' + escapeAttr(xciteUrl(item)) + '" class="xcite-ref">' + escapeHtml(xciteLabel(item)) + '</a>';
+    }
+
+    function ensureXciteIndex() {
+      if (xciteIndex) return Promise.resolve(xciteIndex);
+      if (!xciteIndexPromise) {
+        xciteIndexPromise = Promise.all([
+          loadCollection('articles', 'articles'),
+          loadCollection('collections/posts', 'posts')
+        ]).then(function (results) {
+          var index = {};
+          results.forEach(function (items) {
+            items.forEach(function (item) {
+              var key = item.front_matter && item.front_matter.key;
+              if (key) index[key] = item;
+            });
+          });
+          xciteIndex = index;
+          return index;
+        }).catch(function (error) {
+          xciteIndexPromise = null;
+          throw error;
+        });
+      }
+      return xciteIndexPromise;
+    }
+
+    function resolveXcitePlaceholders(html, index) {
+      return String(html || '').replace(/%%CONTENT_RUNTIME_XCITE_([^%]+)%%/g, function (_, key) {
+        return xciteHtml(key, index);
+      });
     }
 
     function protectMath(markdown) {
@@ -270,8 +322,9 @@
       return html;
     }
 
-    function renderMarkdown(markdown) {
-      var prepared = preprocessLiquid(markdown);
+    function renderMarkdown(markdown, options) {
+      options = options || {};
+      var prepared = preprocessLiquid(markdown, options.xciteIndex);
       var notes = preprocessMarkdownDivs(prepared, 'article-note');
       var math = protectMath(notes.text);
       var html;
@@ -504,24 +557,26 @@
 
     async function renderRichContent(markdown, frontMatter) {
       var fm = frontMatter || {};
+      var index = await ensureXciteIndex();
       var prepared = stripFrontMatter(markdown).replace(/\{%-?\s*assign\s+\w+\s*=\s*site\.data\.transcriptions\[[^\]]+\]\.transcription\s*-?%\}\s*/g, '');
       var replacements = [];
       prepared = prepared.replace(/\{%-?\s*include\s+transcription\.html\s+([\s\S]*?)-?%\}/g, function (match, raw) {
-        var index = replacements.length;
+        var replacementIndex = replacements.length;
         var attrs = parseIncludeAttrs(raw);
         var path = normalizeDataPath(attrs.path || attrs.file || attrs.src, '');
         if (!path && fm.transcription) path = normalizeDataPath(fm.transcription, 'data/transcriptions');
         replacements.push(path ? loadJson(path).then(function (data) { return transcriptionHtml(data, attrs); }) : Promise.resolve(''));
-        return '%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%';
+        return '%%CONTENT_RUNTIME_REPLACEMENT_' + replacementIndex + '%%';
       });
       prepared = prepared.replace(/\{%-?\s*include\s+chord-tab\.html\s+([\s\S]*?)-?%\}/g, function (match, raw) {
-        var index = replacements.length;
+        var replacementIndex = replacements.length;
         var attrs = parseIncludeAttrs(raw);
         var path = normalizeDataPath(attrs.path || attrs.file || attrs.src || attrs.tab, 'data/tabs');
         replacements.push(path ? loadJson(path).then(chordTabHtml) : Promise.resolve(''));
-        return '%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%';
+        return '%%CONTENT_RUNTIME_REPLACEMENT_' + replacementIndex + '%%';
       });
-      var html = renderMarkdown(prepared);
+      var html = renderMarkdown(prepared, { xciteIndex: index });
+      html = resolveXcitePlaceholders(html, index);
       var resolved = await Promise.all(replacements);
       resolved.forEach(function (replacement, index) {
         html = html.replace('<p>%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%</p>', replacement);
