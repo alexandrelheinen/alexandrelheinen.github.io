@@ -1,0 +1,659 @@
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  window.ContentRuntimeConfig = {
+    contentBase: 'https://storage.googleapis.com/website-content-alexandre',
+    defaultAuthor: "Alexandre Loeblein Heinen",
+    translations: {"updated":{"enus":"Updated","ptbr":"Atualizado","frfr":"Mis à jour","eses":"Actualizado"},"published":{"enus":"Published","ptbr":"Publicado","frfr":"Publié","eses":"Publicado"},"months":{"enus":["January","February","March","April","May","June","July","August","September","October","November","December"],"ptbr":["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"],"frfr":["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembro","décembre"],"eses":["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]},"back":{"enus":"Back","ptbr":"Voltar","frfr":"Retour","eses":"Volver"},"back_to_drafts":{"enus":"Back to drafts","ptbr":"Voltar aos rascunhos","frfr":"Retour aux brouillons","eses":"Volver a los borradores"},"back_to_articles":{"enus":"Back to articles","ptbr":"Voltar aos artigos","frfr":"Retour aux articles","eses":"Volver a los artículos"},"back_to_portfolio":{"enus":"Back to portfolio","ptbr":"Voltar ao portfólio","frfr":"Retour au portfolio","eses":"Volver al portafolio"},"previous_text":{"enus":"Previous","ptbr":"Anterior","frfr":"Précédent","eses":"Anterior"},"next_text":{"enus":"Next","ptbr":"Próximo","frfr":"Suivant","eses":"Siguiente"},"random_text":{"enus":"Random","ptbr":"Aleatório","frfr":"Aléatoire","eses":"Aleatorio"},"languages":{"enus":"Read in other languages","ptbr":"Ler em outros idiomas","frfr":"Lire en autres langues","eses":"Leer en otros idiomas"}}
+  };
+</script>
+
+<script>
+  window.ContentRuntime = (function () {
+    'use strict';
+
+    var contentBase = (window.ContentRuntimeConfig && window.ContentRuntimeConfig.contentBase || '').replace(/\/$/, '');
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, '&#96;');
+    }
+
+    function buildUrl(path) {
+      if (!path) return '';
+      if (/^https?:\/\//.test(path)) return path;
+      if (path.charAt(0) === '/') return encodeURI(contentBase + path);
+      return encodeURI(contentBase + '/' + path);
+    }
+
+    function parseIncludeAttrs(raw) {
+      var attrs = {};
+      String(raw || '').replace(/([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, function (_, key, dbl, sgl) {
+        attrs[key] = dbl != null ? dbl : sgl;
+        return '';
+      });
+      return attrs;
+    }
+
+    function parseScalar(value) {
+      var raw = String(value || '').trim();
+      if ((raw.charAt(0) === '"' && raw.charAt(raw.length - 1) === '"') ||
+          (raw.charAt(0) === "'" && raw.charAt(raw.length - 1) === "'")) {
+        return raw.slice(1, -1);
+      }
+      if (raw === 'true') return true;
+      if (raw === 'false') return false;
+      return raw;
+    }
+
+    function hydrateFrontMatter(item) {
+      var markdown = String(item.body_markdown || '').replace(/^\uFEFF/, '');
+      var match = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+      if (!match) return item;
+      var parsed = {};
+      match[1].split(/\n/).forEach(function (line) {
+        var m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+        if (m) parsed[m[1]] = parseScalar(m[2]);
+      });
+      item.front_matter = Object.assign({}, parsed, item.front_matter || {});
+      item.body_markdown = markdown.slice(match[0].length);
+      return item;
+    }
+
+    function stripFrontMatter(markdown) {
+      return String(markdown || '').replace(/^\uFEFF/, '').replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
+    }
+
+    function figureSourceHtml(raw) {
+      if (!raw) return '';
+      if (/<a\s/i.test(raw)) {
+        return ' <span class="text-outline">Source: ' + raw + '</span>';
+      }
+      return ' <span class="text-outline">Source: ' + escapeHtml(raw) + '</span>';
+    }
+
+    function figureHtml(attrs) {
+      var width = attrs.width ? 'max-width:' + escapeAttr(attrs.width) + '%;' : 'max-width:100%;';
+      var src = buildUrl(attrs.src);
+      var caption = attrs.caption || '';
+      return [
+        '<figure class="my-8 mx-auto text-center w-full" style="display:block;margin-left:auto;margin-right:auto;' + width + '">',
+        '<img src="' + escapeAttr(src) + '" alt="' + escapeAttr(attrs.alt || caption) + '" class="mx-auto max-w-full h-auto block" loading="lazy">',
+        caption || attrs.source ? '<figcaption class="mt-3 font-body text-sm text-on-surface-variant italic text-center">' + escapeHtml(caption) + figureSourceHtml(attrs.source) + '</figcaption>' : '',
+        '</figure>'
+      ].join('');
+    }
+
+    function youtubeHtml(attrs, isShort) {
+      var id = attrs.id || attrs.youtube_id;
+      if (!id) return '';
+      var aspect = isShort ? 'max-width: 360px; aspect-ratio: 9 / 16;' : 'aspect-ratio: 16 / 9;';
+      return '<div class="my-8 mx-auto" style="' + aspect + '">' +
+        '<iframe src="https://www.youtube.com/embed/' + escapeAttr(id) + '" title="YouTube video" loading="lazy" allowfullscreen class="w-full h-full"></iframe>' +
+        '</div>';
+    }
+
+    function videoHtml(attrs) {
+      if (!attrs.src) return '';
+      var caption = attrs.caption || '';
+      return '<figure class="my-8 mx-auto text-center">' +
+        '<video controls src="' + escapeAttr(buildUrl(attrs.src)) + '" class="mx-auto max-w-full"></video>' +
+        (caption ? '<figcaption class="mt-3 font-body text-sm text-on-surface-variant italic">' + escapeHtml(caption) + '</figcaption>' : '') +
+        '</figure>';
+    }
+
+    function placeholderHtml() {
+      return '<div class="w-full h-full flex items-center justify-center opacity-30"><span class="material-symbols-outlined text-5xl">article</span></div>';
+    }
+
+    function normalizeDataPath(path, fallbackPrefix) {
+      var value = String(path || '').trim();
+      if (!value) return '';
+      value = value.replace(/^content\/collections\/data\//, 'data/');
+      value = value.replace(/^_data\//, 'data/');
+      value = value.replace(/\.(ya?ml)$/, '.json');
+      if (value.indexOf('/') === -1 && fallbackPrefix) {
+        value = fallbackPrefix + '/' + value + '.json';
+      }
+      return value;
+    }
+
+    function transcriptionHtml(data, attrs) {
+      var rows = Array.isArray(data) ? data : (data && data.transcription) || [];
+      var speakers = [];
+      rows.forEach(function (line) {
+        var character = String(line.character || '').trim();
+        if (character && speakers.indexOf(character) === -1) speakers.push(character);
+      });
+      var colors = ['primary', 'secondary', 'tertiary', 'outline'];
+      var header = attrs.youtube_id ? youtubeHtml({ id: attrs.youtube_id }, false) : '';
+      return [
+        '<div class="mt-16 mb-8">',
+        '<hr class="border-t-2 border-outline-variant mb-6">',
+        header,
+        '<span class="font-label text-xs text-outline uppercase tracking-widest">Transcrição</span>',
+        '</div>',
+        '<div class="transcription-block space-y-4">',
+        rows.map(function (line) {
+          var character = String(line.character || '').trim();
+          var side = '';
+          if (line.timestamp) {
+            side = '<span class="font-mono text-xs text-outline whitespace-nowrap" style="flex-basis:15%; flex-shrink:0; flex-grow:0; max-width:15%; text-align:left; align-self:flex-start;">[' + escapeHtml(line.timestamp) + ']</span>';
+          } else if (line.scene) {
+            side = '<span class="font-mono text-xs text-outline whitespace-nowrap align-top" style="flex-basis:15%; flex-shrink:0; flex-grow:0; max-width:15%; writing-mode:vertical-lr; text-align:left; align-self:flex-start;">' + escapeHtml(line.scene) + '</span>';
+          } else {
+            side = '<span class="font-mono text-xs text-outline opacity-0 whitespace-nowrap align-top" style="flex-basis:15%; flex-shrink:0; flex-grow:0; max-width:15%;">&nbsp;</span>';
+          }
+          if (!character) {
+            return '<div class="flex items-start gap-0 w-full" style="justify-content:flex-start;">' + side + '<span class="font-body text-on-surface italic opacity-60" style="flex-basis:85%; flex-shrink:1; flex-grow:1; max-width:85%; min-width:0;">' + escapeHtml(line.content || '') + '</span></div>';
+          }
+          var color = colors[speakers.indexOf(character)] || 'outline';
+          return '<div class="flex items-start gap-0 w-full" style="justify-content:flex-start;">' + side + '<span class="font-bold text-' + color + ' whitespace-nowrap" style="flex-basis:20%; flex-shrink:0; flex-grow:0; max-width:20%;">' + escapeHtml(character) + '</span><span class="font-body text-on-surface" style="flex-basis:65%; flex-shrink:1; flex-grow:1; max-width:65%; min-width:0;">' + escapeHtml(line.content || '') + '</span></div>';
+        }).join(''),
+        '</div>'
+      ].join('');
+    }
+
+    function chordTabHtml(data) {
+      var sections = (data && data.sections) || [];
+      return [
+        '<div class="chord-tab-container mt-16 mb-8" style="width:100%; box-sizing:border-box; padding-left:0; padding-right:0;">',
+        '<hr class="border-t-2 border-outline-variant mb-6">',
+        '<span class="font-label text-xs text-outline uppercase tracking-widest" style="color:#a05a2e;">Cifra</span>',
+        data && data.intro ? '<div class="mt-3 mb-6"><pre class="font-mono text-outline text-[0.8em] leading-relaxed whitespace-pre m-0 p-0 bg-transparent border-0" style="color:#a05a2e;">' + escapeHtml(data.intro) + '</pre></div>' : '',
+        "<div class=\"mt-4\" style=\"display:grid; grid-template-columns:repeat(auto-fill, min(79ch, 100%)); gap:0 0.5rem; width:100%; font-size:0.8em; font-family:'Courier New', Courier, monospace;\">",
+        sections.map(function (section) {
+          return '<div style="overflow-y:auto;">' +
+            (section.label ? "<div style=\"font-family:'Work Sans', sans-serif; font-size:0.9em; text-transform:uppercase; letter-spacing:0.08em; color:#a05a2e; margin-bottom:0.35rem;\">" + escapeHtml(section.label) + '</div>' : '') +
+            '<pre style="margin:0; padding:0; background:transparent; border:0; white-space:pre; overflow-x:auto; line-height:1.55; color:var(--color-primary, #1b1c15);">' + escapeHtml(section.content || '') + '</pre>' +
+            '<hr style="border:none; border-top:1px solid var(--color-secondary, rgba(0,0,0,0.07)); margin:1.55em 0;">' +
+            '</div>';
+        }).join(''),
+        '</div>',
+        '</div>'
+      ].join('');
+    }
+
+    function preprocessLiquid(markdown) {
+      return stripFrontMatter(markdown)
+        .replace(/\{%-?\s*include\s+figure\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
+          return figureHtml(parseIncludeAttrs(raw));
+        })
+        .replace(/\{%-?\s*include\s+youtube-short\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
+          return youtubeHtml(parseIncludeAttrs(raw), true);
+        })
+        .replace(/\{%-?\s*include\s+youtube\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
+          return youtubeHtml(parseIncludeAttrs(raw), false);
+        })
+        .replace(/\{%-?\s*include\s+video\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
+          return videoHtml(parseIncludeAttrs(raw));
+        })
+        .replace(/\{%-?\s*include\s+xcite\.html\s+key=["']([^"']+)["'][\s\S]*?-?%\}/g, function (_, key) {
+          return '<span class="text-secondary">' + escapeHtml(key) + '</span>';
+        })
+        .replace(/\{%-?\s*cite\s+([^%\s]+)[\s\S]*?-?%\}/g, function (_, key) {
+          return '<sup class="text-secondary">' + escapeHtml(key) + '</sup>';
+        });
+    }
+
+    function protectMath(markdown) {
+      var store = [];
+      var protectedText = String(markdown || '');
+
+      protectedText = protectedText.replace(/\$\$([\s\S]+?)\$\$/g, function (_, math) {
+        var token = '@@CONTENT_RUNTIME_MATH_' + store.length + '@@';
+        store.push({ display: true, math: math });
+        return token;
+      });
+      protectedText = protectedText.replace(/\\\[([\s\S]+?)\\\]/g, function (_, math) {
+        var token = '@@CONTENT_RUNTIME_MATH_' + store.length + '@@';
+        store.push({ display: true, math: math });
+        return token;
+      });
+      protectedText = protectedText.replace(/\\\(([\s\S]+?)\\\)/g, function (_, math) {
+        var token = '@@CONTENT_RUNTIME_MATH_' + store.length + '@@';
+        store.push({ display: false, math: math });
+        return token;
+      });
+      protectedText = protectedText.replace(/(^|[^\\$])\$(?!\$)([^\$\n]+?)\$(?!\$)/g, function (match, prefix, math) {
+        var token = '@@CONTENT_RUNTIME_MATH_' + store.length + '@@';
+        store.push({ display: false, math: math });
+        return prefix + token;
+      });
+
+      return { text: protectedText, store: store };
+    }
+
+    function restoreMath(html, store) {
+      store.forEach(function (entry, index) {
+        var replacement = entry.display ? ('$$' + entry.math + '$$') : ('\\(' + entry.math + '\\)');
+        html = html.split('@@CONTENT_RUNTIME_MATH_' + index + '@@').join(replacement);
+      });
+      return html;
+    }
+
+    function hasMarkdownAttr(openTag) {
+      return /\bmarkdown\s*=\s*["']1["']/i.test(String(openTag || ''));
+    }
+
+    function parseInlineMarkdown(markdown) {
+      if (window.marked && typeof window.marked.parse === 'function') {
+        return window.marked.parse(String(markdown || '').trim(), { gfm: true, breaks: false });
+      }
+      return '<p>' + escapeHtml(markdown).replace(/\n/g, '<br>') + '</p>';
+    }
+
+    function preprocessMarkdownDivs(markdown, className) {
+      var store = [];
+      var pattern = new RegExp('<div\\s+([^>]*class="[^"]*\\b' + className + '\\b[^"]*"[^>]*)>([\\s\\S]*?)<\\/div>', 'gi');
+      var text = String(markdown || '').replace(pattern, function (match, openTag, inner) {
+        if (!hasMarkdownAttr(openTag)) return match;
+        var token = '@@CONTENT_RUNTIME_MD_DIV_' + store.length + '@@';
+        store.push({ className: className, inner: inner });
+        return token;
+      });
+      return { text: text, store: store };
+    }
+
+    function restoreMarkdownDivs(html, store) {
+      store.forEach(function (entry, index) {
+        var replacement = '<div class="' + entry.className + '">' + parseInlineMarkdown(entry.inner) + '</div>';
+        html = html.split('@@CONTENT_RUNTIME_MD_DIV_' + index + '@@').join(replacement);
+      });
+      return html;
+    }
+
+    function renderMarkdown(markdown) {
+      var prepared = preprocessLiquid(markdown);
+      var notes = preprocessMarkdownDivs(prepared, 'article-note');
+      var math = protectMath(notes.text);
+      var html;
+      if (window.marked && typeof window.marked.parse === 'function') {
+        html = window.marked.parse(math.text, { gfm: true, breaks: false });
+      } else {
+        html = math.text
+          .split(/\n\s*\n/)
+          .map(function (block) { return block.trim(); })
+          .filter(Boolean)
+          .map(function (block) { return '<p>' + escapeHtml(block).replace(/\n/g, '<br>') + '</p>'; })
+          .join('');
+      }
+      html = restoreMarkdownDivs(html, notes.store);
+      return restoreMath(html, math.store);
+    }
+
+    async function typesetMath(root) {
+      if (!window.MathJax || typeof window.MathJax.typesetPromise !== 'function') {
+        return;
+      }
+      try {
+        await window.MathJax.typesetPromise(root ? [root] : undefined);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    var mermaidReady = null;
+
+    function ensureMermaid() {
+      if (window.mermaid) return Promise.resolve(window.mermaid);
+      if (mermaidReady) return mermaidReady;
+      mermaidReady = import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')
+        .then(function (mod) {
+          window.mermaid = mod.default;
+          window.mermaid.initialize({
+            startOnLoad: false,
+            theme: 'base',
+            themeVariables: {
+              fontFamily: "'Work Sans', sans-serif",
+              primaryColor: '#f5f0ee',
+              primaryTextColor: '#1b1c15',
+              primaryBorderColor: '#d8cfc9',
+              lineColor: '#86736a',
+              secondaryColor: '#f9f9f9',
+              tertiaryColor: '#eeeeee',
+              nodeBorder: '#d8cfc9',
+              clusterBkg: '#fafafa',
+              edgeLabelBackground: '#ffffff',
+              fontSize: '14px'
+            }
+          });
+          return window.mermaid;
+        })
+        .catch(function (error) {
+          mermaidReady = null;
+          throw error;
+        });
+      return mermaidReady;
+    }
+
+    function translate(key, lang) {
+      var table = (window.ContentRuntimeConfig && window.ContentRuntimeConfig.translations) || {};
+      var bucket = table[key] || {};
+      return bucket[lang] || bucket.enus || '';
+    }
+
+    function buildTextSidebar(options) {
+      var fm = options.frontMatter || {};
+      var title = fm.title || options.fallbackTitle || '';
+      var dateHtml = options.dateHtml || '';
+      var author = fm.author || (window.ContentRuntimeConfig && window.ContentRuntimeConfig.defaultAuthor) || '';
+      var description = fm.description || fm.tagline || '';
+      var parts = ['<div class="md:sticky md:top-32">'];
+
+      if (title) {
+        parts.push('<div class="article-sidebar-heading mb-8">');
+        if (fm.icon) {
+          parts.push('<span class="material-symbols-outlined text-5xl md:text-6xl text-primary mb-4 block leading-none">' + escapeHtml(fm.icon) + '</span>');
+        }
+        parts.push('<h1 class="article-sidebar-title">' + escapeHtml(title) + '</h1>');
+        if (description) {
+          parts.push('<p class="article-sidebar-description">' + escapeHtml(description) + '</p>');
+        }
+        parts.push('</div>');
+      }
+
+      parts.push('<div class="flex flex-col gap-6 text-tertiary font-label text-xs uppercase tracking-widest article-meta mb-8">');
+      parts.push('<div class="flex flex-col gap-2">');
+      if (fm.category) parts.push('<span class="text-primary font-bold">' + escapeHtml(fm.category) + '</span>');
+      if (author) parts.push('<span class="text-on-surface">' + escapeHtml(author) + '</span>');
+      if (dateHtml) parts.push('<div class="mt-1">' + dateHtml + '</div>');
+      if (fm.layout === 'product') {
+        if (fm.company) parts.push('<span class="text-primary font-bold">' + escapeHtml(fm.company) + '</span>');
+        if (fm.product) parts.push('<span>' + escapeHtml(fm.product) + '</span>');
+        if (fm.start_date) {
+          parts.push('<span>' + escapeHtml(fm.start_date) + (fm.end_date ? ' – ' + escapeHtml(fm.end_date) : '') + '</span>');
+        }
+      }
+      if (fm.layout === 'project') {
+        if (fm.label) parts.push('<span class="text-primary font-bold">' + escapeHtml(fm.label) + '</span>');
+        if (fm.start_date) {
+          var end = fm.status === 'ongoing' ? ' — Ongoing' : (fm.end_date ? ' — ' + escapeHtml(fm.end_date) : '');
+          parts.push('<span>' + escapeHtml(fm.start_date) + end + '</span>');
+        }
+      }
+      parts.push('</div></div></div>');
+      return parts.join('');
+    }
+
+    function buildTextBackLink(options) {
+      var lang = options.lang || 'enus';
+      var label = options.backLabel || translate(options.backLabelKey || 'back', lang);
+      return [
+        '<a href="', escapeAttr(options.backUrl || '#'), '" ',
+        'class="back-link text-sm font-label inline-flex items-center gap-2 no-underline hover:underline text-[#8e4d27] mb-8 block" ',
+        'id="', escapeAttr(options.id || 'runtime-back-link'), '">',
+        '<span class="material-symbols-outlined text-sm">arrow_left_alt</span>',
+        escapeHtml(label),
+        '</a>'
+      ].join('');
+    }
+
+    function buildTextFooterNav(options) {
+      var lang = options.lang || 'enus';
+      var parts = ['<nav class="flex items-center justify-between mt-12 pt-8 border-t border-outline-variant/30 text-page-nav">'];
+
+      if (options.previousUrl) {
+        parts.push(
+          '<a href="', escapeAttr(options.previousUrl), '" ',
+          'class="inline-flex items-center gap-2 text-[#8e4d27] no-underline text-sm font-label hover:underline">',
+          '<span class="material-symbols-outlined text-sm">arrow_left_alt</span>',
+          escapeHtml(translate('previous_text', lang)),
+          '</a>'
+        );
+      } else {
+        parts.push('<span></span>');
+      }
+
+      if (options.nextUrl) {
+        parts.push(
+          '<a href="', escapeAttr(options.nextUrl), '" ',
+          'class="inline-flex items-center gap-2 text-[#8e4d27] no-underline text-sm font-label hover:underline">',
+          escapeHtml(translate('next_text', lang)),
+          '<span class="material-symbols-outlined text-sm">arrow_right_alt</span>',
+          '</a>'
+        );
+      } else if (options.showRandom) {
+        parts.push(
+          '<a href="#" id="random-post-link" ',
+          'class="inline-flex items-center gap-2 text-[#8e4d27] no-underline text-sm font-label hover:underline">',
+          escapeHtml(translate('random_text', lang)),
+          '<span class="material-symbols-outlined text-sm">shuffle</span>',
+          '</a>'
+        );
+      } else {
+        parts.push('<span></span>');
+      }
+
+      parts.push('</nav>');
+      return parts.join('');
+    }
+
+    async function enhanceArticleContent(root, frontMatter) {
+      if (!root) return;
+      await typesetMath(root);
+      if (!frontMatter || !frontMatter.mermaid) return;
+      try {
+        await ensureMermaid();
+        root.querySelectorAll('pre code.language-mermaid').forEach(function (code) {
+          var div = document.createElement('div');
+          div.className = 'mermaid';
+          div.textContent = code.textContent;
+          code.closest('pre').replaceWith(div);
+        });
+        if (typeof window.mermaid.run === 'function') {
+          await window.mermaid.run({ nodes: root.querySelectorAll('.mermaid') });
+        }
+      } catch (error) {
+        console.error('Mermaid rendering failed:', error);
+      }
+    }
+
+    function removeRuntimeBackLink() {
+      var existing = document.getElementById('runtime-back-link');
+      if (existing) existing.remove();
+    }
+
+    function insertRuntimeBackLink(beforeElement, options) {
+      removeRuntimeBackLink();
+      if (!beforeElement || !beforeElement.parentElement) return;
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = buildTextBackLink(options);
+      beforeElement.parentElement.insertBefore(wrapper.firstChild, beforeElement);
+    }
+
+    async function renderRuntimeDetailSection(options) {
+      var fm = options.frontMatter || {};
+      var section = document.createElement('section');
+      section.className = 'text-page-main text-reading-column w-full';
+      section.setAttribute(options.detailAttribute, 'true');
+
+      var body = document.createElement('div');
+      body.className = 'article-content';
+      body.innerHTML = await renderRichContent(options.bodyMarkdown, fm);
+      section.appendChild(body);
+
+      if (options.mainColumn) options.mainColumn.appendChild(section);
+
+      await enhanceArticleContent(body, fm);
+
+      if (options.footerNav) {
+        var footer = document.createElement('div');
+        footer.innerHTML = buildTextFooterNav(options.footerNav);
+        if (footer.firstChild) section.appendChild(footer.firstChild);
+      }
+
+      return section;
+    }
+
+    function reportDetailLoadError(error, options) {
+      console.error(error);
+      if (!options || !options.emptyState || !options.grid) return;
+      options.emptyState.classList.remove('hidden');
+      var message = options.emptyState.querySelector('p');
+      if (message) message.textContent = options.message || 'Content could not be loaded right now.';
+      options.grid.insertBefore(options.emptyState, options.noResults || null);
+    }
+
+    async function renderRichContent(markdown, frontMatter) {
+      var fm = frontMatter || {};
+      var prepared = stripFrontMatter(markdown).replace(/\{%-?\s*assign\s+\w+\s*=\s*site\.data\.transcriptions\[[^\]]+\]\.transcription\s*-?%\}\s*/g, '');
+      var replacements = [];
+      prepared = prepared.replace(/\{%-?\s*include\s+transcription\.html\s+([\s\S]*?)-?%\}/g, function (match, raw) {
+        var index = replacements.length;
+        var attrs = parseIncludeAttrs(raw);
+        var path = normalizeDataPath(attrs.path || attrs.file || attrs.src, '');
+        if (!path && fm.transcription) path = normalizeDataPath(fm.transcription, 'data/transcriptions');
+        replacements.push(path ? loadJson(path).then(function (data) { return transcriptionHtml(data, attrs); }) : Promise.resolve(''));
+        return '%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%';
+      });
+      prepared = prepared.replace(/\{%-?\s*include\s+chord-tab\.html\s+([\s\S]*?)-?%\}/g, function (match, raw) {
+        var index = replacements.length;
+        var attrs = parseIncludeAttrs(raw);
+        var path = normalizeDataPath(attrs.path || attrs.file || attrs.src || attrs.tab, 'data/tabs');
+        replacements.push(path ? loadJson(path).then(chordTabHtml) : Promise.resolve(''));
+        return '%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%';
+      });
+      var html = renderMarkdown(prepared);
+      var resolved = await Promise.all(replacements);
+      resolved.forEach(function (replacement, index) {
+        html = html.replace('<p>%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%</p>', replacement);
+        html = html.replace('%%CONTENT_RUNTIME_REPLACEMENT_' + index + '%%', replacement);
+      });
+      if (fm.tab && !/\{%-?\s*include\s+chord-tab\.html/.test(String(markdown || ''))) {
+        try {
+          html += chordTabHtml(await loadJson(normalizeDataPath(fm.tab, 'data/tabs')));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      return html;
+    }
+
+    function textExcerpt(markdown) {
+      var html = renderMarkdown(markdown);
+      var el = document.createElement('div');
+      el.innerHTML = html;
+      var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      return text.length > 220 ? text.slice(0, 217).trim() + '...' : text;
+    }
+
+    function formatDate(value, locale) {
+      if (!value) return '';
+      var parts = String(value).slice(0, 10).split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return value;
+      return new Intl.DateTimeFormat(locale || 'en', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }).format(new Date(parts[0], parts[1] - 1, parts[2]));
+    }
+
+    function chronologySortKey(item) {
+      var fm = item.front_matter || {};
+      var primary = fm.last_updated || fm.date || '';
+      var tiebreaker = fm.date || item.slug || '';
+      return String(primary) + '\0' + String(tiebreaker);
+    }
+
+    function dateKey(value) {
+      if (value == null || value === '') return '';
+      return String(value).slice(0, 10);
+    }
+
+    function renderDateEvolution(date, lastUpdated, locale, options) {
+      options = options || {};
+      var created = formatDate(date, locale);
+      var updated = formatDate(lastUpdated, locale);
+      var hasUpdate = dateKey(lastUpdated) && dateKey(lastUpdated) !== dateKey(date);
+      if (!created && !(hasUpdate && updated)) return '';
+      var align = options.align === 'right' ? ' items-end' : '';
+      var gap = options.gap || 'gap-1';
+      var publishedTitle = options.publishedLabel || 'Published';
+      var updatedTitle = options.updatedLabel || 'Updated';
+      var html = '<div class="date-evolution flex flex-col ' + gap + align + '">';
+      if (created) {
+        html += '<span' + (options.showLabels ? '' : ' title="' + escapeAttr(publishedTitle) + '"') + '>';
+        if (options.showLabels) html += escapeHtml(publishedTitle) + ': ';
+        html += escapeHtml(created) + '</span>';
+      }
+      if (hasUpdate && updated) {
+        html += '<span class="opacity-60"' + (options.showLabels ? '' : ' title="' + escapeAttr(updatedTitle) + '"') + '>';
+        if (options.showLabels) html += escapeHtml(updatedTitle) + ': ';
+        html += escapeHtml(updated) + '</span>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    async function listPaths(collection, manifestKey) {
+      var manifestResponse = await fetch(buildUrl('manifest.json'));
+      if (manifestResponse.ok) {
+        var manifest = await manifestResponse.json();
+        var files = manifest.files && manifest.files[manifestKey];
+        if (Array.isArray(files)) return files;
+      }
+
+      var response = await fetch(buildUrl('?prefix=' + collection + '/'));
+      if (!response.ok) throw new Error('Bucket listing failed: ' + response.status);
+      var xml = await response.text();
+      var doc = new DOMParser().parseFromString(xml, 'application/xml');
+      var re = new RegExp('^' + collection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/.+\\.json$');
+      return Array.from(doc.getElementsByTagName('Key'))
+        .map(function (node) { return node.textContent; })
+        .filter(function (path) { return re.test(path); });
+    }
+
+    async function loadCollection(collection, manifestKey) {
+      var paths = await listPaths(collection, manifestKey);
+      var items = await Promise.all(paths.map(function (path) {
+        return fetch(buildUrl(path)).then(function (response) {
+          if (!response.ok) throw new Error('Content fetch failed: ' + path);
+          return response.json();
+        });
+      }));
+      return items.map(hydrateFrontMatter).filter(function (item) {
+        return !(item.front_matter && item.front_matter.published === false);
+      });
+    }
+
+    async function loadJson(path) {
+      var response = await fetch(buildUrl(path));
+      if (!response.ok) throw new Error('Content JSON fetch failed: ' + path);
+      return response.json();
+    }
+
+    return {
+      buildUrl: buildUrl,
+      contentBase: contentBase,
+      escapeHtml: escapeHtml,
+      escapeAttr: escapeAttr,
+      chronologySortKey: chronologySortKey,
+      formatDate: formatDate,
+      renderDateEvolution: renderDateEvolution,
+      loadCollection: loadCollection,
+      loadJson: loadJson,
+      placeholderHtml: placeholderHtml,
+      renderRichContent: renderRichContent,
+      enhanceArticleContent: enhanceArticleContent,
+      insertRuntimeBackLink: insertRuntimeBackLink,
+      removeRuntimeBackLink: removeRuntimeBackLink,
+      renderRuntimeDetailSection: renderRuntimeDetailSection,
+      reportDetailLoadError: reportDetailLoadError,
+      buildTextSidebar: buildTextSidebar,
+      buildTextBackLink: buildTextBackLink,
+      buildTextFooterNav: buildTextFooterNav,
+      translate: translate,
+      typesetMath: typesetMath,
+      renderMarkdown: renderMarkdown,
+      textExcerpt: textExcerpt
+    };
+  })();
+</script>
