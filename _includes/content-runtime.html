@@ -55,8 +55,13 @@
 
     function parseIncludeAttrs(raw) {
       var attrs = {};
-      String(raw || '').replace(/([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, function (_, key, dbl, sgl) {
+      var text = String(raw || '');
+      text = text.replace(/([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, function (_, key, dbl, sgl) {
         attrs[key] = dbl != null ? dbl : sgl;
+        return '';
+      });
+      text.replace(/([\w-]+)\s*=\s*([^\s]+)/g, function (_, key, val) {
+        if (!(key in attrs)) attrs[key] = val;
         return '';
       });
       return attrs;
@@ -157,6 +162,48 @@
         value = fallbackPrefix + '/' + value + '.json';
       }
       return value;
+    }
+
+    function preprocessTranscriptionAssigns(markdown) {
+      var assignMap = {};
+      var text = String(markdown || '').replace(
+        /\{%-?\s*assign\s+(\w+)\s*=\s*site\.data\.transcriptions\[([^\]]+)\]\.transcription\s*-?%\}\s*/g,
+        function (_, varName, keyExpr) {
+          keyExpr = String(keyExpr || '').trim();
+          if ((keyExpr.charAt(0) === "'" && keyExpr.charAt(keyExpr.length - 1) === "'") ||
+              (keyExpr.charAt(0) === '"' && keyExpr.charAt(keyExpr.length - 1) === '"')) {
+            assignMap[varName] = keyExpr.slice(1, -1);
+          } else if (keyExpr === 'page.transcription') {
+            assignMap[varName] = null;
+          } else {
+            assignMap[varName] = keyExpr;
+          }
+          return '';
+        }
+      );
+      return { text: text, assignMap: assignMap };
+    }
+
+    function resolveTranscriptionPath(attrs, fm, assignMap) {
+      var path = normalizeDataPath(attrs.path || attrs.file || attrs.src, '');
+      if (path) return path;
+
+      var transcriptionVar = attrs.transcription;
+      if (transcriptionVar && Object.prototype.hasOwnProperty.call(assignMap, transcriptionVar)) {
+        var assignedKey = assignMap[transcriptionVar];
+        if (assignedKey) {
+          return normalizeDataPath(assignedKey, 'data/transcriptions');
+        }
+        if (fm.transcription) {
+          return normalizeDataPath(fm.transcription, 'data/transcriptions');
+        }
+      }
+
+      if (fm.transcription) {
+        return normalizeDataPath(fm.transcription, 'data/transcriptions');
+      }
+
+      return '';
     }
 
     function transcriptionHtml(data, attrs) {
@@ -599,13 +646,14 @@
     async function renderRichContent(markdown, frontMatter) {
       var fm = frontMatter || {};
       var index = await ensureXciteIndex();
-      var prepared = stripFrontMatter(markdown).replace(/\{%-?\s*assign\s+\w+\s*=\s*site\.data\.transcriptions\[[^\]]+\]\.transcription\s*-?%\}\s*/g, '');
+      var assignPrep = preprocessTranscriptionAssigns(stripFrontMatter(markdown));
+      var prepared = assignPrep.text;
+      var transcriptionAssigns = assignPrep.assignMap;
       var replacements = [];
       prepared = prepared.replace(/\{%-?\s*include\s+transcription\.html\s+([\s\S]*?)-?%\}/g, function (match, raw) {
         var replacementIndex = replacements.length;
         var attrs = parseIncludeAttrs(raw);
-        var path = normalizeDataPath(attrs.path || attrs.file || attrs.src, '');
-        if (!path && fm.transcription) path = normalizeDataPath(fm.transcription, 'data/transcriptions');
+        var path = resolveTranscriptionPath(attrs, fm, transcriptionAssigns);
         replacements.push(path ? loadJson(path).then(function (data) { return transcriptionHtml(data, attrs); }) : Promise.resolve(''));
         return '%%CONTENT_RUNTIME_REPLACEMENT_' + replacementIndex + '%%';
       });
