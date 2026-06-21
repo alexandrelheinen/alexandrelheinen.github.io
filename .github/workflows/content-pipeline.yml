@@ -1,0 +1,72 @@
+name: Content pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "content/**"
+      - "scripts/export-content-json.rb"
+      - ".github/workflows/content-pipeline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Convert Markdown and data to JSON
+        run: ruby scripts/export-content-json.rb content _content_json
+
+      - name: Upload content JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-json
+          path: _content_json
+
+      - name: Authenticate to Google Cloud
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != ''
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != ''
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload content JSON to GCS
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != ''
+        run: |
+          for path in articles collections data pages; do
+            if [ -d "_content_json/${path}" ]; then
+              gcloud storage rsync "_content_json/${path}" "gs://${{ vars.GCS_CONTENT_BUCKET }}/${path}" \
+                --recursive \
+                --delete-unmatched-destination-objects \
+                --cache-control="public,max-age=60"
+            fi
+          done
+
+          gcloud storage cp _content_json/manifest.json "gs://${{ vars.GCS_CONTENT_BUCKET }}/manifest.json" \
+            --cache-control="public,max-age=60"
+
+      - name: Upload editorial media to GCS
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != ''
+        run: |
+          if [ -d content/media ]; then
+            gcloud storage rsync content/media "gs://${{ vars.GCS_CONTENT_BUCKET }}/media" \
+              --recursive \
+              --cache-control="public,max-age=31536000,immutable"
+          fi

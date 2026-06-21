@@ -26,11 +26,31 @@
       return escapeHtml(value).replace(/`/g, '&#96;');
     }
 
+    function shellOrigin() {
+      return (window.ContentRuntimeConfig && window.ContentRuntimeConfig.shellOrigin) || window.location.origin || '';
+    }
+
     function buildUrl(path) {
       if (!path) return '';
       if (/^https?:\/\//.test(path)) return path;
       if (path.charAt(0) === '/') return encodeURI(contentBase + path);
       return encodeURI(contentBase + '/' + path);
+    }
+
+    function resolveAssetUrl(path) {
+      if (!path) return '';
+      var value = String(path).trim();
+      if (/^https?:\/\//i.test(value)) return value;
+      if (value.charAt(0) === '/') {
+        if (value.indexOf('/media/') === 0) {
+          return encodeURI(contentBase.replace(/\/$/, '') + value);
+        }
+        return encodeURI(shellOrigin().replace(/\/$/, '') + value);
+      }
+      if (value.indexOf('media/') === 0) {
+        return encodeURI(contentBase.replace(/\/$/, '') + '/' + value);
+      }
+      return encodeURI(contentBase.replace(/\/$/, '') + '/' + value);
     }
 
     function parseIncludeAttrs(raw) {
@@ -81,7 +101,7 @@
 
     function figureHtml(attrs) {
       var width = attrs.width ? 'max-width:' + escapeAttr(attrs.width) + '%;' : 'max-width:100%;';
-      var src = buildUrl(attrs.src);
+      var src = resolveAssetUrl(attrs.src);
       var caption = attrs.caption || '';
       return [
         '<figure class="my-8 mx-auto text-center w-full" style="display:block;margin-left:auto;margin-right:auto;' + width + '">',
@@ -118,7 +138,7 @@
       if (!attrs.src) return '';
       var caption = attrs.caption || '';
       return '<figure class="my-8 mx-auto text-center">' +
-        '<video controls src="' + escapeAttr(buildUrl(attrs.src)) + '" class="mx-auto max-w-full"></video>' +
+        '<video controls src="' + escapeAttr(resolveAssetUrl(attrs.src)) + '" class="mx-auto max-w-full"></video>' +
         (caption ? '<figcaption class="mt-3 font-body text-sm text-on-surface-variant italic">' + escapeHtml(caption) + '</figcaption>' : '') +
         '</figure>';
     }
