@@ -100,6 +100,20 @@
         '</div>';
     }
 
+    function youtubeShortEmbed(id) {
+      return '<div class="flex-1 min-w-[240px] max-w-[360px]" style="aspect-ratio:9/16">' +
+        '<iframe src="https://www.youtube.com/embed/' + escapeAttr(id) + '" title="YouTube short" loading="lazy" allowfullscreen class="w-full h-full"></iframe>' +
+        '</div>';
+    }
+
+    function youtubeShortsPairHtml(attrs) {
+      var ids = [attrs.id1, attrs.id2].filter(Boolean);
+      if (!ids.length) return '';
+      return '<div class="youtube-shorts-pair my-8 mx-auto flex flex-wrap justify-center gap-4 items-start">' +
+        ids.map(youtubeShortEmbed).join('') +
+        '</div>';
+    }
+
     function videoHtml(attrs) {
       if (!attrs.src) return '';
       var caption = attrs.caption || '';
@@ -185,6 +199,9 @@
       return stripFrontMatter(markdown)
         .replace(/\{%-?\s*include\s+figure\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
           return figureHtml(parseIncludeAttrs(raw));
+        })
+        .replace(/\{%-?\s*include\s+youtube-shorts-pair\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
+          return youtubeShortsPairHtml(parseIncludeAttrs(raw));
         })
         .replace(/\{%-?\s*include\s+youtube-short\.html\s+([\s\S]*?)-?%\}/g, function (_, raw) {
           return youtubeHtml(parseIncludeAttrs(raw), true);
