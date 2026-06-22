@@ -1,0 +1,9 @@
+# Copy this file to the Cloudflare Pages site root (next to index.html in _site/).
+# Rewrites keep clean URLs like /articles/slug/ while serving the runtime viewer.
+
+/articles/:slug /pages/articles/?article=:slug 200
+/articles/:slug/ /pages/articles/?article=:slug 200
+/posts/:slug /pages/blog/?post=:slug 200
+/posts/:slug/ /pages/blog/?post=:slug 200
+/resources/:slug /pages/resources/?resource=:slug 200
+/resources/:slug/ /pages/resources/?resource=:slug 200
